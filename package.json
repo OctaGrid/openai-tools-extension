@@ -1,0 +1,40 @@
+{
+  "name": "@octagrid/openai-tools-extension",
+  "version": "1.0.0",
+  "description": "OpenAI tools extension",
+  "keywords": [
+    "openai",
+    "azure-openai"
+  ],
+  "license": "PolyForm Noncommercial 1.0.0",
+  "author": "Tarek Aoukar <t.aoukar@octagrid.net>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OctaGrid/openai-tools-extension.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "prepare": "npm run clean && npm run build",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "peerDependencies": {
+    "openai": "^4.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "openai": "^4.79.1",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.0.0",
+    "zod": "^4.0.17"
+  }
+}
