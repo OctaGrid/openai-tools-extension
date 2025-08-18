@@ -1,4 +1,7 @@
-import type { ChatCompletionMessageToolCall } from "openai/resources/chat";
+import type {
+  ChatCompletionMessageToolCall,
+  ChatCompletionTool,
+} from "openai/resources/chat";
 import { z } from "zod";
 
 export type ToolFromSchema<TSchema extends z.ZodTypeAny, TResult = unknown> = (
@@ -8,11 +11,12 @@ export type ToolFromSchema<TSchema extends z.ZodTypeAny, TResult = unknown> = (
 export type TypedToolEntry<TSchema extends z.ZodTypeAny, TResult = unknown> = {
   argsSchema: TSchema;
   tool: ToolFromSchema<TSchema, TResult>;
+  chatTool: ChatCompletionTool;
 };
 
 // execution options – now generic over *exact* tools object
 export type ExecuteTypedToolsOptions<
-  TTools extends Record<string, TypedToolEntry<any, any>>
+  TTools extends Array<TypedToolEntry<any, any>>
 > = {
   tools: TTools;
   calls: ChatCompletionMessageToolCall[];
@@ -26,17 +30,21 @@ export type ExecuteTypedToolsOptions<
 };
 
 export async function executeTypedTools<
-  TTools extends Record<string, TypedToolEntry<any, any>>
+  TTools extends Array<TypedToolEntry<any, any>>
 >({
   tools,
   calls,
   toolNotFound,
   toolArgsError,
 }: ExecuteTypedToolsOptions<TTools>) {
+  const map = new Map<string, TypedToolEntry<any, any>>();
+  tools.forEach((tool) => {
+    map.set(tool.chatTool.function.name, tool);
+  });
   return await Promise.all(
     calls.map(async (call) => {
       const { name, arguments: strArgs } = call.function;
-      const toolDef = tools[name];
+      const toolDef = map.get(name);
 
       if (!toolDef) {
         await toolNotFound?.(name, strArgs);
@@ -70,6 +78,7 @@ export async function executeTypedTools<
 export function defineTool<const TSchema extends z.ZodTypeAny, TResult>(entry: {
   argsSchema: TSchema;
   tool: (args: z.infer<TSchema>) => Promise<TResult>;
+  chatTool: ChatCompletionTool;
 }): TypedToolEntry<TSchema, TResult> {
   return entry;
 }
