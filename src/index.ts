@@ -14,6 +14,20 @@ export type TypedToolEntry<TSchema extends z.ZodTypeAny, TResult = unknown> = {
   chatTool: ChatCompletionTool;
 };
 
+export type ToolExecutionResult<TResult = unknown> =
+  | {
+      name: string;
+      ok: boolean;
+      error: any;
+      result?: undefined;
+    }
+  | {
+      name: string;
+      ok: boolean;
+      result: TResult;
+      error?: undefined;
+    };
+
 // execution options – now generic over *exact* tools object
 export type ExecuteTypedToolsOptions<
   TTools extends Array<TypedToolEntry<any, any>>
@@ -36,19 +50,55 @@ export async function executeTypedTools<
   calls,
   toolNotFound,
   toolArgsError,
-}: ExecuteTypedToolsOptions<TTools>) {
+  parallel = true,
+}: ExecuteTypedToolsOptions<TTools>): Promise<Array<ToolExecutionResult>> {
   const map = new Map<string, TypedToolEntry<any, any>>();
   tools.forEach((tool) => {
     map.set(tool.chatTool.function.name, tool);
   });
-  return await Promise.all(
-    calls.map(async (call) => {
+  if (parallel) {
+    return await Promise.all(
+      calls.map(async (call) => {
+        const { name, arguments: strArgs } = call.function;
+        const toolDef = map.get(name);
+
+        if (!toolDef) {
+          await toolNotFound?.(name, strArgs);
+          return { name, ok: false, error: "Tool not found" };
+        }
+
+        const { tool, argsSchema } = toolDef;
+
+        try {
+          const parsedRaw = JSON.parse(strArgs);
+          if (argsSchema) {
+            const validation = argsSchema.safeParse(parsedRaw);
+            if (!validation.success) {
+              await toolArgsError?.(name, strArgs, validation.error);
+              return { name, ok: false, error: validation.error };
+            }
+            const result = await tool(validation.data);
+            return { name, ok: true, result };
+          } else {
+            const result = await tool(parsedRaw);
+            return { name, ok: true, result };
+          }
+        } catch (err) {
+          await toolArgsError?.(name, strArgs, err);
+          return { name, ok: false, error: err };
+        }
+      })
+    );
+  } else {
+    const results: ToolExecutionResult<any>[] = [];
+    for (const call of calls) {
       const { name, arguments: strArgs } = call.function;
       const toolDef = map.get(name);
 
       if (!toolDef) {
         await toolNotFound?.(name, strArgs);
-        return { name, ok: false, error: "Tool not found" };
+        results.push({ name, ok: false, error: "Tool not found" });
+        continue;
       }
 
       const { tool, argsSchema } = toolDef;
@@ -59,20 +109,25 @@ export async function executeTypedTools<
           const validation = argsSchema.safeParse(parsedRaw);
           if (!validation.success) {
             await toolArgsError?.(name, strArgs, validation.error);
-            return { name, ok: false, error: validation.error };
+            results.push({ name, ok: false, error: validation.error });
+            continue;
           }
           const result = await tool(validation.data);
-          return { name, ok: true, result };
+          results.push({ name, ok: true, result });
+          continue;
         } else {
           const result = await tool(parsedRaw);
-          return { name, ok: true, result };
+          results.push({ name, ok: true, result });
+          continue;
         }
       } catch (err) {
         await toolArgsError?.(name, strArgs, err);
-        return { name, ok: false, error: err };
+        results.push({ name, ok: false, error: err });
+        continue;
       }
-    })
-  );
+    }
+    return results;
+  }
 }
 
 export function defineTool<const TSchema extends z.ZodTypeAny, TResult>(entry: {
